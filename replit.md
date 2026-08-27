@@ -1,6 +1,6 @@
-# [Project name]
+# Harbor / Career Services CRM
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A private career-services workspace for managing healthcare employers, graduates, job opportunities, outreach follow-ups, filtered reports, and safe CSV imports.
 
 ## Run & Operate
 
@@ -22,23 +22,33 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/career-services-crm/src/pages/` — dashboard, employer, graduate, job bank, settings, and report screens.
+- `artifacts/career-services-crm/src/components/` — shared workspace shell, page primitives, and CSV import dialog.
+- `artifacts/career-services-crm/src/lib/csv.ts` — CSV parsing, template, and browser download helpers.
+- `artifacts/api-server/src/routes/career.ts` — career-services API routes and demo data seeding.
+- `lib/db/src/schema/` — PostgreSQL schema for programs, employers, graduates, jobs, relationships, and activity.
+- `lib/api-spec/openapi.yaml` — source-of-truth API contract.
+- `artifacts/career-services-crm/src/index.css` — shared Harbor workspace theme.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The app is CRM-first: jobs live in the same system as employer relationships rather than being a public job board.
+- Employers, jobs, and graduates connect to programs through IDs so one record can serve multiple healthcare programs without duplication.
+- Graduate visibility is explicit (`opted-in`, `needs-review`, or `private`) and job matching only returns opted-in graduates.
+- Reports are downloaded client-side from the currently filtered records; CSV imports use name/email duplicate checks before saving.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+The workspace gives one career-services manager a single place to see relationship health, maintain employer and graduate directories, keep a program-aware job bank, review follow-ups, export filtered employer or graduate reports, and import records from CSV templates.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the first version focused on a private, single-user workflow; Outlook connection and broader access can be added after the core workflow is proven.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- CSV imports expect lowercase header matching, with templates available from each import dialog.
+- The generated API validation layer uses Zod 4 syntax; keep the workspace Zod catalog aligned with the generator.
 
 ## Pointers
 

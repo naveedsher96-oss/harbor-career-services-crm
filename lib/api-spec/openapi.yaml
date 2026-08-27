@@ -10,6 +10,16 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Dashboard overview and recent activity
+  - name: programs
+    description: Healthcare training programs
+  - name: employers
+    description: Employer relationship records
+  - name: graduates
+    description: Graduate records and sharing preferences
+  - name: jobs
+    description: Job opportunities and matching
 paths:
   /healthz:
     get:
@@ -24,7 +34,274 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /activity:
+    get:
+      operationId: getActivity
+      tags: [dashboard]
+      summary: Get recent activity
+      responses:
+        "200":
+          description: Recent activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Activity"
+  /programs:
+    get:
+      operationId: listPrograms
+      tags: [programs]
+      summary: List healthcare programs
+      responses:
+        "200":
+          description: Healthcare programs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Program"
+  /employers:
+    get:
+      operationId: listEmployers
+      tags: [employers]
+      summary: List employers
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/ProgramId"
+      responses:
+        "200":
+          description: Employers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employer"
+    post:
+      operationId: createEmployer
+      tags: [employers]
+      summary: Create an employer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployerInput"
+      responses:
+        "201":
+          description: Employer created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employer"
+  /employers/{id}:
+    get:
+      operationId: getEmployer
+      tags: [employers]
+      summary: Get an employer
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Employer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employer"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateEmployer
+      tags: [employers]
+      summary: Update an employer
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmployerUpdate"
+      responses:
+        "200":
+          description: Employer updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employer"
+  /graduates:
+    get:
+      operationId: listGraduates
+      tags: [graduates]
+      summary: List graduates
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/ProgramId"
+        - name: visibility
+          in: query
+          schema:
+            type: string
+            enum: [opted-in, needs-review, private]
+      responses:
+        "200":
+          description: Graduates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Graduate"
+    post:
+      operationId: createGraduate
+      tags: [graduates]
+      summary: Create a graduate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraduateInput"
+      responses:
+        "201":
+          description: Graduate created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Graduate"
+  /graduates/{id}:
+    patch:
+      operationId: updateGraduate
+      tags: [graduates]
+      summary: Update a graduate
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GraduateUpdate"
+      responses:
+        "200":
+          description: Graduate updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Graduate"
+  /jobs:
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List job opportunities
+      parameters:
+        - $ref: "#/components/parameters/Search"
+        - $ref: "#/components/parameters/ProgramId"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, shared, filled, expired]
+      responses:
+        "200":
+          description: Job opportunities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Job"
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Create a job opportunity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobInput"
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+  /jobs/{id}:
+    patch:
+      operationId: updateJob
+      tags: [jobs]
+      summary: Update a job opportunity
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobUpdate"
+      responses:
+        "200":
+          description: Job updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+  /jobs/{id}/matches:
+    get:
+      operationId: getJobMatches
+      tags: [jobs]
+      summary: Find opted-in graduates who match a job
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Matching graduates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Graduate"
 components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+    ProgramId:
+      name: programId
+      in: query
+      schema:
+        type: integer
+  responses:
+    NotFound:
+      description: Record not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +310,187 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Program:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        shortName: { type: string }
+        color: { type: string }
+        employerCount: { type: integer }
+        graduateCount: { type: integer }
+        openJobCount: { type: integer }
+      required: [id, name, shortName, color, employerCount, graduateCount, openJobCount]
+    Employer:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        type: { type: string }
+        location: { type: string }
+        website: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [active, prospect, dormant]
+        primaryContact: { type: ["string", "null"] }
+        primaryEmail: { type: ["string", "null"] }
+        programIds:
+          type: array
+          items: { type: integer }
+        programNames:
+          type: array
+          items: { type: string }
+        openJobs: { type: integer }
+        lastContacted: { type: ["string", "null"], format: date }
+        nextFollowUp: { type: ["string", "null"], format: date }
+        notes: { type: ["string", "null"] }
+      required: [id, name, type, location, status, programIds, programNames, openJobs]
+    EmployerInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        type: { type: string }
+        location: { type: string }
+        website: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [active, prospect, dormant]
+        primaryContact: { type: ["string", "null"] }
+        primaryEmail: { type: ["string", "null"] }
+        programIds:
+          type: array
+          items: { type: integer }
+        nextFollowUp: { type: ["string", "null"], format: date }
+        notes: { type: ["string", "null"] }
+      required: [name, type, location, status, programIds]
+    EmployerUpdate:
+      allOf:
+        - $ref: "#/components/schemas/EmployerInput"
+    Graduate:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        phone: { type: ["string", "null"] }
+        programId: { type: integer }
+        programName: { type: string }
+        cohort: { type: string }
+        location: { type: string }
+        availability: { type: string }
+        skills:
+          type: array
+          items: { type: string }
+        visibility:
+          type: string
+          enum: [opted-in, needs-review, private]
+        resumeName: { type: ["string", "null"] }
+        resumeUpdated: { type: ["string", "null"], format: date }
+        placementStatus:
+          type: string
+          enum: [seeking, interviewing, placed, not-seeking]
+      required: [id, name, email, programId, programName, cohort, location, availability, skills, visibility, placementStatus]
+    GraduateInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string, format: email }
+        phone: { type: ["string", "null"] }
+        programId: { type: integer }
+        cohort: { type: string }
+        location: { type: string }
+        availability: { type: string }
+        skills:
+          type: array
+          items: { type: string }
+        visibility:
+          type: string
+          enum: [opted-in, needs-review, private]
+        placementStatus:
+          type: string
+          enum: [seeking, interviewing, placed, not-seeking]
+      required: [name, email, programId, cohort, location, availability, skills, visibility, placementStatus]
+    GraduateUpdate:
+      allOf:
+        - $ref: "#/components/schemas/GraduateInput"
+    Job:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        employerId: { type: integer }
+        employerName: { type: string }
+        location: { type: string }
+        schedule: { type: string }
+        pay: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        programIds:
+          type: array
+          items: { type: integer }
+        programNames:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: [open, shared, filled, expired]
+        postedDate: { type: string, format: date }
+        expiresDate: { type: ["string", "null"], format: date }
+        applicants: { type: integer }
+      required: [id, title, employerId, employerName, location, schedule, programIds, programNames, status, postedDate, applicants]
+    JobInput:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        employerId: { type: integer }
+        location: { type: string }
+        schedule: { type: string }
+        pay: { type: ["string", "null"] }
+        description: { type: ["string", "null"] }
+        programIds:
+          type: array
+          items: { type: integer }
+        status:
+          type: string
+          enum: [open, shared, filled, expired]
+        expiresDate: { type: ["string", "null"], format: date }
+      required: [title, employerId, location, schedule, programIds, status]
+    JobUpdate:
+      allOf:
+        - $ref: "#/components/schemas/JobInput"
+    Activity:
+      type: object
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          enum: [email, job, graduate, employer, placement]
+        title: { type: string }
+        detail: { type: string }
+        timestamp: { type: string, format: date-time }
+        entityId: { type: ["integer", "null"] }
+      required: [id, type, title, detail, timestamp]
+    DashboardSummary:
+      type: object
+      properties:
+        employers: { type: integer }
+        activeEmployers: { type: integer }
+        openJobs: { type: integer }
+        optedInGraduates: { type: integer }
+        followUpsDue: { type: integer }
+        placementsThisMonth: { type: integer }
+        programs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Program"
+        priorityJobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+      required: [employers, activeEmployers, openJobs, optedInGraduates, followUpsDue, placementsThisMonth, programs, priorityJobs]
 

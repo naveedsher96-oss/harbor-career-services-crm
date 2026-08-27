@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Career Services CRM"
+description = "A private career-services CRM for managing healthcare-program employers, graduates, job opportunities, outreach follow-ups, and controlled candidate sharing."
+version = "1.0.0"
+id = "artifacts/career-services-crm"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25253
+
+[services.development]
+run = "pnpm --filter @workspace/career-services-crm run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/career-services-crm", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/career-services-crm/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25253"
+BASE_PATH = "/"

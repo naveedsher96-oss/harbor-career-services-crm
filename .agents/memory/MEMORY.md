@@ -1,0 +1,1 @@
+- [OpenAPI validation compatibility](openapi-validation-compatibility.md) — keep the workspace Zod version aligned with the current Orval Zod generator output.

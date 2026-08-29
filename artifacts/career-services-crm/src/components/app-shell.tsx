@@ -50,8 +50,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Settings2 className="h-[17px] w-[17px]" strokeWidth={1.8} /><span>Workspace settings</span>
           </Link>
           <div className="mt-5 flex items-center gap-3 rounded-[12px] border border-sidebar-border bg-sidebar-accent/50 p-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dd9f62] text-[11px] font-bold text-[#273f43]">MC</div>
-            <div className="min-w-0"><div className="truncate text-xs font-bold text-sidebar-accent-foreground">Maya Chen</div><div className="truncate text-[10px] text-sidebar-foreground/50">Healthcare pathways</div></div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dd9f62] text-[11px] font-bold text-[#273f43]">N</div>
+            <div className="min-w-0"><div className="truncate text-xs font-bold text-sidebar-accent-foreground">Naveed</div><div className="truncate text-[10px] text-sidebar-foreground/50">Healthcare pathways</div></div>
             <div className="ml-auto h-1.5 w-1.5 rounded-full bg-sidebar-primary" />
           </div>
         </div>
@@ -70,8 +70,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Bell className="h-[18px] w-[18px]" strokeWidth={1.8} /><span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-accent" />
           </button>
           <div className="hidden h-5 w-px bg-border sm:block" />
-          <div className="hidden text-right sm:block"><div className="text-xs font-semibold">Maya Chen</div><div className="text-[10px] text-muted-foreground">Career services manager</div></div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dd9f62] text-[10px] font-bold text-[#273f43]">MC</div>
+          <div className="hidden text-right sm:block"><div className="text-xs font-semibold">Naveed</div><div className="text-[10px] text-muted-foreground">Career services manager</div></div>
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#dd9f62] text-[10px] font-bold text-[#273f43]">N</div>
         </div>
       </header>
       {mobileOpen && <div className="fixed inset-0 z-40 bg-sidebar md:hidden"><div className="flex h-full flex-col p-5 text-sidebar-foreground"><div className="mb-8 flex items-center justify-between"><span className="font-serif text-lg font-extrabold text-sidebar-accent-foreground">Harbor /</span><button type="button" onClick={() => setMobileOpen(false)} data-testid="button-close-mobile-nav"><X /></button></div>{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 border-b border-sidebar-border py-4 text-sm font-semibold" data-testid={`mobile-link-${label.toLowerCase().replace(' ', '-')}`}><Icon className="h-5 w-5 text-sidebar-primary" />{label}</Link>)}</div></div>}

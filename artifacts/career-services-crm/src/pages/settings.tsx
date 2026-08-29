@@ -4,7 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { PageHeader } from '@/components/page-primitives';
 
 export default function Settings() {
-  const [name, setName] = useState('Maya Chen');
+  const [name, setName] = useState('Naveed');
   const [email, setEmail] = useState('maya.chen@harbor.edu');
   const [saved, setSaved] = useState(false);
   const [compact, setCompact] = useState(true);

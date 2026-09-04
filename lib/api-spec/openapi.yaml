@@ -143,6 +143,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Employer"
+    delete:
+      operationId: deleteEmployer
+      tags: [employers]
+      summary: Delete an employer
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Employer deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /graduates:
     get:
       operationId: listGraduates
@@ -202,6 +215,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Graduate"
+    delete:
+      operationId: deleteGraduate
+      tags: [graduates]
+      summary: Delete a graduate
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Graduate deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
   /jobs:
     get:
       operationId: listJobs
@@ -261,6 +285,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Job"
+    delete:
+      operationId: deleteJob
+      tags: [jobs]
+      summary: Delete a job opportunity
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Job deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
   /jobs/{id}/matches:
     get:
       operationId: getJobMatches
@@ -298,6 +333,12 @@ components:
   responses:
     NotFound:
       description: Record not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Record cannot be deleted because other records depend on it
       content:
         application/json:
           schema:

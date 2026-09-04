@@ -215,6 +215,16 @@ export const UpdateEmployerResponse = zod.object({
 
 
 /**
+ * @summary Delete an employer
+ */
+export const DeleteEmployerParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const DeleteEmployerResponse = zod.void()
+
+
+/**
  * @summary List graduates
  */
 export const ListGraduatesQueryParams = zod.object({
@@ -321,6 +331,16 @@ export const UpdateGraduateResponse = zod.object({
 
 
 /**
+ * @summary Delete a graduate
+ */
+export const DeleteGraduateParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const DeleteGraduateResponse = zod.void()
+
+
+/**
  * @summary List job opportunities
  */
 export const ListJobsQueryParams = zod.object({
@@ -422,6 +442,16 @@ export const UpdateJobResponse = zod.object({
   "expiresDate": zod.coerce.date().nullish(),
   "applicants": zod.int()
 })
+
+
+/**
+ * @summary Delete a job opportunity
+ */
+export const DeleteJobParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const DeleteJobResponse = zod.void()
 
 
 /**

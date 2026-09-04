@@ -18,6 +18,9 @@ import {
   CreateEmployerBody,
   CreateGraduateBody,
   CreateJobBody,
+  DeleteEmployerParams,
+  DeleteGraduateParams,
+  DeleteJobParams,
   GetDashboardSummaryResponse,
   GetActivityResponse,
   GetEmployerParams,
@@ -593,6 +596,27 @@ router.patch("/employers/:id", async (req, res) => {
   return res.json(GetEmployerResponse.parse(data));
 });
 
+router.delete("/employers/:id", async (req, res) => {
+  await ensureSeedData();
+  const params = DeleteEmployerParams.parse(req.params);
+  const dependentJobs = await db
+    .select({ id: jobsTable.id })
+    .from(jobsTable)
+    .where(eq(jobsTable.employerId, params.id));
+  if (dependentJobs.length > 0) {
+    return res.status(409).json({
+      error: `This employer has ${dependentJobs.length} job${dependentJobs.length === 1 ? "" : "s"} in the job bank. Delete or reassign ${dependentJobs.length === 1 ? "it" : "them"} first.`,
+    });
+  }
+  await db.delete(employerProgramsTable).where(eq(employerProgramsTable.employerId, params.id));
+  const deleted = await db
+    .delete(employersTable)
+    .where(eq(employersTable.id, params.id))
+    .returning();
+  if (deleted.length === 0) return res.status(404).json({ error: "Employer not found" });
+  return res.status(204).end();
+});
+
 router.get("/graduates", async (req, res) => {
   await ensureSeedData();
   const params = ListGraduatesQueryParams.parse(req.query);
@@ -645,6 +669,17 @@ router.patch("/graduates/:id", async (req, res) => {
     .returning())[0];
   if (!graduate) return res.status(404).json({ error: "Graduate not found" });
   return res.json((await formatGraduate(graduate)) as unknown);
+});
+
+router.delete("/graduates/:id", async (req, res) => {
+  await ensureSeedData();
+  const params = DeleteGraduateParams.parse(req.params);
+  const deleted = await db
+    .delete(graduatesTable)
+    .where(eq(graduatesTable.id, params.id))
+    .returning();
+  if (deleted.length === 0) return res.status(404).json({ error: "Graduate not found" });
+  return res.status(204).end();
 });
 
 router.get("/jobs", async (req, res) => {
@@ -727,6 +762,18 @@ router.patch("/jobs/:id", async (req, res) => {
     );
   }
   return res.json((await formatJob(job)) as unknown);
+});
+
+router.delete("/jobs/:id", async (req, res) => {
+  await ensureSeedData();
+  const params = DeleteJobParams.parse(req.params);
+  await db.delete(jobProgramsTable).where(eq(jobProgramsTable.jobId, params.id));
+  const deleted = await db
+    .delete(jobsTable)
+    .where(eq(jobsTable.id, params.id))
+    .returning();
+  if (deleted.length === 0) return res.status(404).json({ error: "Job not found" });
+  return res.status(204).end();
 });
 
 router.get("/jobs/:id/matches", async (req, res) => {

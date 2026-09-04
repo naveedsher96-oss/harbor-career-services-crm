@@ -1,0 +1,668 @@
+diff --git a/artifacts/api-server/src/routes/career.ts b/artifacts/api-server/src/routes/career.ts
+index 21f1d64..4488639 100644
+--- a/artifacts/api-server/src/routes/career.ts
++++ b/artifacts/api-server/src/routes/career.ts
+@@ -18,6 +18,9 @@ import {
+   CreateEmployerBody,
+   CreateGraduateBody,
+   CreateJobBody,
++  DeleteEmployerParams,
++  DeleteGraduateParams,
++  DeleteJobParams,
+   GetDashboardSummaryResponse,
+   GetActivityResponse,
+   GetEmployerParams,
+@@ -593,6 +596,27 @@ router.patch("/employers/:id", async (req, res) => {
+   return res.json(GetEmployerResponse.parse(data));
+ });
+ 
++router.delete("/employers/:id", async (req, res) => {
++  await ensureSeedData();
++  const params = DeleteEmployerParams.parse(req.params);
++  const dependentJobs = await db
++    .select({ id: jobsTable.id })
++    .from(jobsTable)
++    .where(eq(jobsTable.employerId, params.id));
++  if (dependentJobs.length > 0) {
++    return res.status(409).json({
++      error: `This employer has ${dependentJobs.length} job${dependentJobs.length === 1 ? "" : "s"} in the job bank. Delete or reassign ${dependentJobs.length === 1 ? "it" : "them"} first.`,
++    });
++  }
++  await db.delete(employerProgramsTable).where(eq(employerProgramsTable.employerId, params.id));
++  const deleted = await db
++    .delete(employersTable)
++    .where(eq(employersTable.id, params.id))
++    .returning();
++  if (deleted.length === 0) return res.status(404).json({ error: "Employer not found" });
++  return res.status(204).end();
++});
++
+ router.get("/graduates", async (req, res) => {
+   await ensureSeedData();
+   const params = ListGraduatesQueryParams.parse(req.query);
+@@ -647,6 +671,17 @@ router.patch("/graduates/:id", async (req, res) => {
+   return res.json((await formatGraduate(graduate)) as unknown);
+ });
+ 
++router.delete("/graduates/:id", async (req, res) => {
++  await ensureSeedData();
++  const params = DeleteGraduateParams.parse(req.params);
++  const deleted = await db
++    .delete(graduatesTable)
++    .where(eq(graduatesTable.id, params.id))
++    .returning();
++  if (deleted.length === 0) return res.status(404).json({ error: "Graduate not found" });
++  return res.status(204).end();
++});
++
+ router.get("/jobs", async (req, res) => {
+   await ensureSeedData();
+   const params = ListJobsQueryParams.parse(req.query);
+@@ -729,6 +764,18 @@ router.patch("/jobs/:id", async (req, res) => {
+   return res.json((await formatJob(job)) as unknown);
+ });
+ 
++router.delete("/jobs/:id", async (req, res) => {
++  await ensureSeedData();
++  const params = DeleteJobParams.parse(req.params);
++  await db.delete(jobProgramsTable).where(eq(jobProgramsTable.jobId, params.id));
++  const deleted = await db
++    .delete(jobsTable)
++    .where(eq(jobsTable.id, params.id))
++    .returning();
++  if (deleted.length === 0) return res.status(404).json({ error: "Job not found" });
++  return res.status(204).end();
++});
++
+ router.get("/jobs/:id/matches", async (req, res) => {
+   await ensureSeedData();
+   const params = GetJobMatchesParams.parse(req.params);
+diff --git a/artifacts/career-services-crm/src/pages/employers.tsx b/artifacts/career-services-crm/src/pages/employers.tsx
+index 716f43d..415d329 100644
+--- a/artifacts/career-services-crm/src/pages/employers.tsx
++++ b/artifacts/career-services-crm/src/pages/employers.tsx
+@@ -1,14 +1,34 @@
+-import { Building2, Mail, MapPin, Pencil, Plus, X } from 'lucide-react';
++import { Building2, Mail, MapPin, Pencil, Plus, Trash2, X } from 'lucide-react';
+ import { useEffect, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+-import { useGetEmployer, useListEmployers, useListPrograms, useCreateEmployer, useUpdateEmployer, getGetEmployerQueryKey, getListEmployersQueryKey } from '@workspace/api-client-react';
++import { useGetEmployer, useListEmployers, useListPrograms, useCreateEmployer, useUpdateEmployer, useDeleteEmployer, getGetEmployerQueryKey, getListEmployersQueryKey } from '@workspace/api-client-react';
+ import type { Employer, EmployerInput } from '@workspace/api-client-react';
+ import { AppShell } from '@/components/app-shell';
+ import { ErrorState, LoadingRows, PageHeader, SaveButton, SearchBox, StatusPill } from '@/components/page-primitives';
+ import { CsvImportDialog } from '@/components/csv-import-dialog';
++import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
++import { toast } from '@/hooks/use-toast';
+ import type { CsvRow } from '@/lib/csv';
+ import { downloadCsvTemplate } from '@/lib/csv';
+ 
++function extractErrorMessage(error: unknown, fallback: string): string {
++  if (error instanceof Error) {
++    const separatorIndex = error.message.indexOf(': ');
++    return separatorIndex >= 0 ? error.message.slice(separatorIndex + 2) : error.message;
++  }
++  return fallback;
++}
++
++function DeleteEmployerDialog({ employer, onClose }: { employer: Employer; onClose: () => void }) {
++  const queryClient = useQueryClient();
++  const deleteMutation = useDeleteEmployer();
++  const confirmDelete = () => deleteMutation.mutate({ id: employer.id }, {
++    onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListEmployersQueryKey() }); toast({ title: 'Employer removed', description: `${employer.name} was deleted.` }); onClose(); },
++    onError: (error) => toast({ variant: 'destructive', title: 'Could not delete employer', description: extractErrorMessage(error, 'Something went wrong. Please try again.') }),
++  });
++  return <AlertDialog open onOpenChange={(open) => !open && onClose()}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove {employer.name}?</AlertDialogTitle><AlertDialogDescription>This deletes the employer record and its program links. This can't be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel data-testid="button-cancel-delete-employer">Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} disabled={deleteMutation.isPending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="button-confirm-delete-employer">{deleteMutation.isPending ? 'Deleting…' : 'Delete employer'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
++}
++
+ function EmployerDialog({ employer, onClose }: { employer?: Employer; onClose: () => void }) {
+   const queryClient = useQueryClient();
+   const programsQuery = useListPrograms();
+@@ -33,6 +53,7 @@ export default function Employers() {
+   const [search, setSearch] = useState('');
+   const [programId, setProgramId] = useState<number | undefined>();
+   const [editing, setEditing] = useState<Employer | undefined>();
++  const [deleting, setDeleting] = useState<Employer | undefined>();
+   const [dialog, setDialog] = useState(false);
+   const [importDialog, setImportDialog] = useState(false);
+   const query = useListEmployers({ search: search || undefined, programId });
+@@ -82,8 +103,9 @@ export default function Employers() {
+   };
+   return <AppShell><div className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9"><PageHeader eyebrow="Relationship directory" title="Employers" description="A considered record of every relationship — who is warm, who needs a nudge, and where there’s room to help." action={<div className="flex flex-wrap gap-2"><button type="button" onClick={() => setImportDialog(true)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-bold hover:border-accent hover:bg-accent/10" data-testid="button-import-employers">Import CSV</button><button type="button" onClick={() => { setEditing(undefined); setDialog(true); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-new-employer"><Plus className="h-4 w-4" />Add employer</button></div>} />
+     <div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-border bg-card p-3 md:flex-row"><div className="min-w-0 flex-1"><SearchBox value={search} onChange={setSearch} placeholder="Search employers, contacts, or locations" testId="input-search-employers" /></div><select value={programId ?? ''} onChange={(event) => setProgramId(event.target.value ? Number(event.target.value) : undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-employer-program"><option value="">All programs</option>{(programsQuery.data ?? []).map((program) => <option value={program.id} key={program.id}>{program.shortName}</option>)}</select><div className="flex items-center px-2 text-xs text-muted-foreground">{employers.length} records</div></div>
+-    <div className="overflow-hidden rounded-[14px] border border-border bg-card">{query.isLoading ? <LoadingRows /> : query.isError ? <ErrorState retry={() => query.refetch()} /> : employers.length === 0 ? <div className="p-16 text-center"><Building2 className="mx-auto h-8 w-8 text-accent" /><h2 className="mt-4 font-serif text-lg font-bold">No relationships in this view</h2><p className="mt-1 text-sm text-muted-foreground">Try a different search or add your first employer.</p><button type="button" onClick={() => setDialog(true)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground" data-testid="button-empty-add-employer">Add employer</button></div> : <div className="overflow-x-auto"><table className="data-table w-full min-w-[850px] text-left"><thead><tr><th className="px-5 py-3">Organization</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Programs</th><th className="px-4 py-3">Open jobs</th><th className="px-4 py-3">Next follow-up</th><th className="px-4 py-3">Status</th><th className="w-12 px-2" /></tr></thead><tbody>{employers.map((employer) => <tr key={employer.id} data-testid={`row-employer-${employer.id}`}><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-secondary text-sm font-bold text-primary">{employer.name.slice(0, 1)}</div><div><div className="text-sm font-bold">{employer.name}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3" />{employer.location} <span className="mx-1 text-border">/</span>{employer.type}</div></div></div></td><td className="px-4 py-4"><div className="text-xs font-semibold">{employer.primaryContact || 'No contact yet'}</div>{employer.primaryEmail && <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" />{employer.primaryEmail}</div>}</td><td className="px-4 py-4"><div className="flex max-w-[150px] flex-wrap gap-1">{employer.programNames.map((name) => <span className="rounded bg-muted px-1.5 py-1 text-[10px] font-bold text-muted-foreground" key={name}>{name}</span>)}</div></td><td className="px-4 py-4"><span className="mono text-sm font-medium">{employer.openJobs}</span></td><td className="px-4 py-4"><span className={`text-xs font-semibold ${employer.nextFollowUp && new Date(employer.nextFollowUp) < new Date() ? 'text-[#a4473e]' : ''}`}>{employer.nextFollowUp ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(employer.nextFollowUp)) : '—'}</span></td><td className="px-4 py-4"><StatusPill value={employer.status} /></td><td className="px-2 py-4"><button type="button" onClick={() => { setEditing(employer); setDialog(true); }} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary" data-testid={`button-edit-employer-${employer.id}`} aria-label={`Edit ${employer.name}`}><Pencil className="h-3.5 w-3.5" /></button></td></tr>)}</tbody></table></div>}</div>
++    <div className="overflow-hidden rounded-[14px] border border-border bg-card">{query.isLoading ? <LoadingRows /> : query.isError ? <ErrorState retry={() => query.refetch()} /> : employers.length === 0 ? <div className="p-16 text-center"><Building2 className="mx-auto h-8 w-8 text-accent" /><h2 className="mt-4 font-serif text-lg font-bold">No relationships in this view</h2><p className="mt-1 text-sm text-muted-foreground">Try a different search or add your first employer.</p><button type="button" onClick={() => setDialog(true)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground" data-testid="button-empty-add-employer">Add employer</button></div> : <div className="overflow-x-auto"><table className="data-table w-full min-w-[850px] text-left"><thead><tr><th className="px-5 py-3">Organization</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Programs</th><th className="px-4 py-3">Open jobs</th><th className="px-4 py-3">Next follow-up</th><th className="px-4 py-3">Status</th><th className="w-12 px-2" /></tr></thead><tbody>{employers.map((employer) => <tr key={employer.id} data-testid={`row-employer-${employer.id}`}><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-secondary text-sm font-bold text-primary">{employer.name.slice(0, 1)}</div><div><div className="text-sm font-bold">{employer.name}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3" />{employer.location} <span className="mx-1 text-border">/</span>{employer.type}</div></div></div></td><td className="px-4 py-4"><div className="text-xs font-semibold">{employer.primaryContact || 'No contact yet'}</div>{employer.primaryEmail && <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><Mail className="h-3 w-3" />{employer.primaryEmail}</div>}</td><td className="px-4 py-4"><div className="flex max-w-[150px] flex-wrap gap-1">{employer.programNames.map((name) => <span className="rounded bg-muted px-1.5 py-1 text-[10px] font-bold text-muted-foreground" key={name}>{name}</span>)}</div></td><td className="px-4 py-4"><span className="mono text-sm font-medium">{employer.openJobs}</span></td><td className="px-4 py-4"><span className={`text-xs font-semibold ${employer.nextFollowUp && new Date(employer.nextFollowUp) < new Date() ? 'text-[#a4473e]' : ''}`}>{employer.nextFollowUp ? new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(employer.nextFollowUp)) : '—'}</span></td><td className="px-4 py-4"><StatusPill value={employer.status} /></td><td className="px-2 py-4"><div className="flex items-center gap-1"><button type="button" onClick={() => { setEditing(employer); setDialog(true); }} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary" data-testid={`button-edit-employer-${employer.id}`} aria-label={`Edit ${employer.name}`}><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setDeleting(employer)} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" data-testid={`button-delete-employer-${employer.id}`} aria-label={`Delete ${employer.name}`}><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>)}</tbody></table></div>}</div>
+     {dialog && <EmployerDialog employer={editing} onClose={() => setDialog(false)} />}
++    {deleting && <DeleteEmployerDialog employer={deleting} onClose={() => setDeleting(undefined)} />}
+     {importDialog && <CsvImportDialog title="Import employers" description="Add multiple employer records at once. Existing organizations with the same name are skipped, and each row is matched to the programs you already use." headers={['name', 'type', 'location', 'website', 'contact', 'email', 'programs', 'status', 'next follow-up', 'notes']} templateLabel="Download template" onTemplate={() => downloadCsvTemplate('employers-template.csv', ['name', 'type', 'location', 'website', 'contact', 'email', 'programs', 'status', 'next follow-up', 'notes'], { name: 'Northside Pharmacy', type: 'Independent pharmacy', location: 'Austin, TX', website: '', contact: 'Hiring contact', email: 'contact@example.com', programs: 'Pharmacy', status: 'prospect', 'next follow-up': '2026-09-01', notes: '' })} onImport={importEmployers} onClose={() => setImportDialog(false)} />}
+   </div></AppShell>;
+ }
+\ No newline at end of file
+diff --git a/artifacts/career-services-crm/src/pages/graduates.tsx b/artifacts/career-services-crm/src/pages/graduates.tsx
+index 03bdf61..cbcc672 100644
+--- a/artifacts/career-services-crm/src/pages/graduates.tsx
++++ b/artifacts/career-services-crm/src/pages/graduates.tsx
+@@ -1,14 +1,34 @@
+-import { MapPin, Pencil, Plus, ShieldCheck, UsersRound, X } from 'lucide-react';
++import { MapPin, Pencil, Plus, ShieldCheck, Trash2, UsersRound, X } from 'lucide-react';
+ import { useEffect, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+-import { useCreateGraduate, useListGraduates, useListPrograms, useUpdateGraduate, getListGraduatesQueryKey } from '@workspace/api-client-react';
++import { useCreateGraduate, useListGraduates, useListPrograms, useUpdateGraduate, useDeleteGraduate, getListGraduatesQueryKey } from '@workspace/api-client-react';
+ import type { Graduate, GraduateInput } from '@workspace/api-client-react';
+ import { AppShell } from '@/components/app-shell';
+ import { ErrorState, LoadingRows, PageHeader, SaveButton, SearchBox, StatusPill } from '@/components/page-primitives';
+ import { CsvImportDialog } from '@/components/csv-import-dialog';
++import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
++import { toast } from '@/hooks/use-toast';
+ import type { CsvRow } from '@/lib/csv';
+ import { downloadCsvTemplate } from '@/lib/csv';
+ 
++function extractErrorMessage(error: unknown, fallback: string): string {
++  if (error instanceof Error) {
++    const separatorIndex = error.message.indexOf(': ');
++    return separatorIndex >= 0 ? error.message.slice(separatorIndex + 2) : error.message;
++  }
++  return fallback;
++}
++
++function DeleteGraduateDialog({ graduate, onClose }: { graduate: Graduate; onClose: () => void }) {
++  const queryClient = useQueryClient();
++  const deleteMutation = useDeleteGraduate();
++  const confirmDelete = () => deleteMutation.mutate({ id: graduate.id }, {
++    onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListGraduatesQueryKey() }); toast({ title: 'Graduate removed', description: `${graduate.name} was deleted.` }); onClose(); },
++    onError: (error) => toast({ variant: 'destructive', title: 'Could not delete graduate', description: extractErrorMessage(error, 'Something went wrong. Please try again.') }),
++  });
++  return <AlertDialog open onOpenChange={(open) => !open && onClose()}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove {graduate.name}?</AlertDialogTitle><AlertDialogDescription>This deletes the graduate record, including consent visibility and skills. This can't be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel data-testid="button-cancel-delete-graduate">Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} disabled={deleteMutation.isPending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="button-confirm-delete-graduate">{deleteMutation.isPending ? 'Deleting…' : 'Delete graduate'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
++}
++
+ function GraduateDialog({ graduate, onClose }: { graduate?: Graduate; onClose: () => void }) {
+   const client = useQueryClient();
+   const programs = useListPrograms();
+@@ -28,6 +48,7 @@ export default function Graduates() {
+   const [programId, setProgramId] = useState<number | undefined>();
+   const [visibility, setVisibility] = useState<string | undefined>();
+   const [editing, setEditing] = useState<Graduate>();
++  const [deleting, setDeleting] = useState<Graduate>();
+   const [dialog, setDialog] = useState(false);
+   const [importDialog, setImportDialog] = useState(false);
+   const query = useListGraduates({ search: search || undefined, programId, visibility: visibility as 'opted-in' | 'needs-review' | 'private' | undefined });
+@@ -78,5 +99,5 @@ export default function Graduates() {
+     await client.invalidateQueries({ queryKey: getListGraduatesQueryKey() });
+     return { imported, skipped, errors };
+   };
+-  return <AppShell><div className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9"><PageHeader eyebrow="Graduate directory" title="Graduates" description="Keep consent visible, skills current, and the next right opportunity within easy reach." action={<div className="flex flex-wrap gap-2"><button type="button" onClick={() => setImportDialog(true)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-bold hover:border-accent hover:bg-accent/10" data-testid="button-import-graduates">Import CSV</button><button type="button" onClick={() => { setEditing(undefined); setDialog(true); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-new-graduate"><Plus className="h-4 w-4" />Add graduate</button></div>} /><div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-border bg-card p-3 md:flex-row"><div className="min-w-0 flex-1"><SearchBox value={search} onChange={setSearch} placeholder="Search by name, skill, or location" testId="input-search-graduates" /></div><select value={programId ?? ''} onChange={(event) => setProgramId(event.target.value ? Number(event.target.value) : undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-graduate-program"><option value="">All programs</option>{(programs.data ?? []).map((program) => <option value={program.id} key={program.id}>{program.shortName}</option>)}</select><select value={visibility ?? ''} onChange={(event) => setVisibility(event.target.value || undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-graduate-visibility"><option value="">All visibility</option><option value="opted-in">Opted in</option><option value="needs-review">Needs review</option><option value="private">Private</option></select><div className="flex items-center px-2 text-xs text-muted-foreground">{graduates.length} records</div></div><div className="overflow-hidden rounded-[14px] border border-border bg-card">{query.isLoading ? <LoadingRows /> : query.isError ? <ErrorState retry={() => query.refetch()} /> : graduates.length === 0 ? <div className="p-16 text-center"><UsersRound className="mx-auto h-8 w-8 text-accent" /><h2 className="mt-4 font-serif text-lg font-bold">No graduates in this view</h2><p className="mt-1 text-sm text-muted-foreground">Try adjusting your filters or add a new graduate record.</p><button type="button" onClick={() => setDialog(true)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground" data-testid="button-empty-add-graduate">Add graduate</button></div> : <div className="overflow-x-auto"><table className="data-table w-full min-w-[980px] text-left"><thead><tr><th className="px-5 py-3">Graduate</th><th className="px-4 py-3">Program</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3">Availability</th><th className="px-4 py-3">Visibility</th><th className="px-4 py-3">Placement</th><th className="w-12 px-2" /></tr></thead><tbody>{graduates.map((graduate) => <tr key={graduate.id} data-testid={`row-graduate-${graduate.id}`}><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f8e9dc] text-xs font-bold text-[#a75d31]">{graduate.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><div className="text-sm font-bold">{graduate.name}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3" />{graduate.location} <span className="mx-1 text-border">/</span>Class of {graduate.cohort}</div></div></div></td><td className="px-4 py-4"><span className="rounded bg-muted px-2 py-1 text-[10px] font-bold text-muted-foreground">{graduate.programName}</span></td><td className="max-w-[220px] px-4 py-4"><div className="flex flex-wrap gap-1">{graduate.skills.slice(0, 3).map((skill) => <span key={skill} className="rounded bg-secondary px-1.5 py-1 text-[10px] font-medium text-primary">{skill}</span>)}</div></td><td className="px-4 py-4 text-xs text-muted-foreground">{graduate.availability}</td><td className="px-4 py-4"><div className="flex items-center gap-1.5">{graduate.visibility === 'opted-in' && <ShieldCheck className="h-3.5 w-3.5 text-[#287668]" />}<StatusPill value={graduate.visibility} /></div></td><td className="px-4 py-4"><StatusPill value={graduate.placementStatus} /></td><td className="px-2 py-4"><button type="button" onClick={() => { setEditing(graduate); setDialog(true); }} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary" data-testid={`button-edit-graduate-${graduate.id}`} aria-label={`Edit ${graduate.name}`}><Pencil className="h-3.5 w-3.5" /></button></td></tr>)}</tbody></table></div>}</div>{dialog && <GraduateDialog graduate={editing} onClose={() => setDialog(false)} />}{importDialog && <CsvImportDialog title="Import graduates" description="Bring in a candidate list from a spreadsheet. Existing records with the same email are skipped, and visibility stays explicit so private profiles never slip into sharing." headers={['name', 'email', 'phone', 'program', 'cohort', 'location', 'availability', 'skills', 'visibility', 'placement']} templateLabel="Download template" onTemplate={() => downloadCsvTemplate('graduates-template.csv', ['name', 'email', 'phone', 'program', 'cohort', 'location', 'availability', 'skills', 'visibility', 'placement'], { name: 'Avery Johnson', email: 'avery@example.com', phone: '', program: 'Pharmacy', cohort: '2026', location: 'Austin, TX', availability: 'Immediately', skills: 'PCTB certified|Patient service', visibility: 'needs-review', placement: 'seeking' })} onImport={importGraduates} onClose={() => setImportDialog(false)} />}</div></AppShell>;
++  return <AppShell><div className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9"><PageHeader eyebrow="Graduate directory" title="Graduates" description="Keep consent visible, skills current, and the next right opportunity within easy reach." action={<div className="flex flex-wrap gap-2"><button type="button" onClick={() => setImportDialog(true)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 py-2.5 text-xs font-bold hover:border-accent hover:bg-accent/10" data-testid="button-import-graduates">Import CSV</button><button type="button" onClick={() => { setEditing(undefined); setDialog(true); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-new-graduate"><Plus className="h-4 w-4" />Add graduate</button></div>} /><div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-border bg-card p-3 md:flex-row"><div className="min-w-0 flex-1"><SearchBox value={search} onChange={setSearch} placeholder="Search by name, skill, or location" testId="input-search-graduates" /></div><select value={programId ?? ''} onChange={(event) => setProgramId(event.target.value ? Number(event.target.value) : undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-graduate-program"><option value="">All programs</option>{(programs.data ?? []).map((program) => <option value={program.id} key={program.id}>{program.shortName}</option>)}</select><select value={visibility ?? ''} onChange={(event) => setVisibility(event.target.value || undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-graduate-visibility"><option value="">All visibility</option><option value="opted-in">Opted in</option><option value="needs-review">Needs review</option><option value="private">Private</option></select><div className="flex items-center px-2 text-xs text-muted-foreground">{graduates.length} records</div></div><div className="overflow-hidden rounded-[14px] border border-border bg-card">{query.isLoading ? <LoadingRows /> : query.isError ? <ErrorState retry={() => query.refetch()} /> : graduates.length === 0 ? <div className="p-16 text-center"><UsersRound className="mx-auto h-8 w-8 text-accent" /><h2 className="mt-4 font-serif text-lg font-bold">No graduates in this view</h2><p className="mt-1 text-sm text-muted-foreground">Try adjusting your filters or add a new graduate record.</p><button type="button" onClick={() => setDialog(true)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground" data-testid="button-empty-add-graduate">Add graduate</button></div> : <div className="overflow-x-auto"><table className="data-table w-full min-w-[980px] text-left"><thead><tr><th className="px-5 py-3">Graduate</th><th className="px-4 py-3">Program</th><th className="px-4 py-3">Skills</th><th className="px-4 py-3">Availability</th><th className="px-4 py-3">Visibility</th><th className="px-4 py-3">Placement</th><th className="w-12 px-2" /></tr></thead><tbody>{graduates.map((graduate) => <tr key={graduate.id} data-testid={`row-graduate-${graduate.id}`}><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f8e9dc] text-xs font-bold text-[#a75d31]">{graduate.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><div className="text-sm font-bold">{graduate.name}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3" />{graduate.location} <span className="mx-1 text-border">/</span>Class of {graduate.cohort}</div></div></div></td><td className="px-4 py-4"><span className="rounded bg-muted px-2 py-1 text-[10px] font-bold text-muted-foreground">{graduate.programName}</span></td><td className="max-w-[220px] px-4 py-4"><div className="flex flex-wrap gap-1">{graduate.skills.slice(0, 3).map((skill) => <span key={skill} className="rounded bg-secondary px-1.5 py-1 text-[10px] font-medium text-primary">{skill}</span>)}</div></td><td className="px-4 py-4 text-xs text-muted-foreground">{graduate.availability}</td><td className="px-4 py-4"><div className="flex items-center gap-1.5">{graduate.visibility === 'opted-in' && <ShieldCheck className="h-3.5 w-3.5 text-[#287668]" />}<StatusPill value={graduate.visibility} /></div></td><td className="px-4 py-4"><StatusPill value={graduate.placementStatus} /></td><td className="px-2 py-4"><div className="flex items-center gap-1"><button type="button" onClick={() => { setEditing(graduate); setDialog(true); }} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary" data-testid={`button-edit-graduate-${graduate.id}`} aria-label={`Edit ${graduate.name}`}><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setDeleting(graduate)} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" data-testid={`button-delete-graduate-${graduate.id}`} aria-label={`Delete ${graduate.name}`}><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>)}</tbody></table></div>}</div>{dialog && <GraduateDialog graduate={editing} onClose={() => setDialog(false)} />}{deleting && <DeleteGraduateDialog graduate={deleting} onClose={() => setDeleting(undefined)} />}{importDialog && <CsvImportDialog title="Import graduates" description="Bring in a candidate list from a spreadsheet. Existing records with the same email are skipped, and visibility stays explicit so private profiles never slip into sharing." headers={['name', 'email', 'phone', 'program', 'cohort', 'location', 'availability', 'skills', 'visibility', 'placement']} templateLabel="Download template" onTemplate={() => downloadCsvTemplate('graduates-template.csv', ['name', 'email', 'phone', 'program', 'cohort', 'location', 'availability', 'skills', 'visibility', 'placement'], { name: 'Avery Johnson', email: 'avery@example.com', phone: '', program: 'Pharmacy', cohort: '2026', location: 'Austin, TX', availability: 'Immediately', skills: 'PCTB certified|Patient service', visibility: 'needs-review', placement: 'seeking' })} onImport={importGraduates} onClose={() => setImportDialog(false)} />}</div></AppShell>;
+ }
+\ No newline at end of file
+diff --git a/artifacts/career-services-crm/src/pages/jobs.tsx b/artifacts/career-services-crm/src/pages/jobs.tsx
+index e0643f5..faf6bc7 100644
+--- a/artifacts/career-services-crm/src/pages/jobs.tsx
++++ b/artifacts/career-services-crm/src/pages/jobs.tsx
+@@ -1,10 +1,30 @@
+-import { ArrowUpRight, BriefcaseBusiness, CalendarDays, MapPin, Pencil, Plus, Sparkles, UsersRound, X } from 'lucide-react';
++import { ArrowUpRight, BriefcaseBusiness, CalendarDays, MapPin, Pencil, Plus, Sparkles, Trash2, UsersRound, X } from 'lucide-react';
+ import { useEffect, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+-import { getGetJobMatchesQueryKey, getListJobsQueryKey, useCreateJob, useGetJobMatches, useListEmployers, useListJobs, useListPrograms, useUpdateJob } from '@workspace/api-client-react';
++import { getGetJobMatchesQueryKey, getListJobsQueryKey, useCreateJob, useGetJobMatches, useListEmployers, useListJobs, useListPrograms, useUpdateJob, useDeleteJob } from '@workspace/api-client-react';
+ import type { Job, JobInput } from '@workspace/api-client-react';
+ import { AppShell } from '@/components/app-shell';
+ import { ErrorState, LoadingRows, PageHeader, SaveButton, SearchBox, StatusPill } from '@/components/page-primitives';
++import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
++import { toast } from '@/hooks/use-toast';
++
++function extractErrorMessage(error: unknown, fallback: string): string {
++  if (error instanceof Error) {
++    const separatorIndex = error.message.indexOf(': ');
++    return separatorIndex >= 0 ? error.message.slice(separatorIndex + 2) : error.message;
++  }
++  return fallback;
++}
++
++function DeleteJobDialog({ job, onClose }: { job: Job; onClose: () => void }) {
++  const queryClient = useQueryClient();
++  const deleteMutation = useDeleteJob();
++  const confirmDelete = () => deleteMutation.mutate({ id: job.id }, {
++    onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListJobsQueryKey() }); toast({ title: 'Job removed', description: `${job.title} was deleted.` }); onClose(); },
++    onError: (error) => toast({ variant: 'destructive', title: 'Could not delete job', description: extractErrorMessage(error, 'Something went wrong. Please try again.') }),
++  });
++  return <AlertDialog open onOpenChange={(open) => !open && onClose()}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove {job.title}?</AlertDialogTitle><AlertDialogDescription>This deletes the opportunity and its program links. This can't be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel data-testid="button-cancel-delete-job">Cancel</AlertDialogCancel><AlertDialogAction onClick={confirmDelete} disabled={deleteMutation.isPending} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" data-testid="button-confirm-delete-job">{deleteMutation.isPending ? 'Deleting…' : 'Delete job'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>;
++}
+ 
+ function JobDialog({ job, onClose }: { job?: Job; onClose: () => void }) {
+   const client = useQueryClient();
+@@ -33,9 +53,10 @@ export default function Jobs() {
+   const [status, setStatus] = useState<string>();
+   const [editing, setEditing] = useState<Job>();
+   const [matching, setMatching] = useState<Job>();
++  const [deleting, setDeleting] = useState<Job>();
+   const [dialog, setDialog] = useState(false);
+   const query = useListJobs({ search: search || undefined, programId, status: status as 'open' | 'shared' | 'filled' | 'expired' | undefined });
+   const programs = useListPrograms();
+   const jobs = query.data ?? [];
+-  return <AppShell><div className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9"><PageHeader eyebrow="Opportunity bank" title="Jobs" description="The right role at the right moment. Keep openings useful, current, and easy to connect to a graduate." action={<button type="button" onClick={() => { setEditing(undefined); setDialog(true); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-new-job"><Plus className="h-4 w-4" />Post a job</button>} /><div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-border bg-card p-3 md:flex-row"><div className="min-w-0 flex-1"><SearchBox value={search} onChange={setSearch} placeholder="Search jobs, employers, or locations" testId="input-search-jobs" /></div><select value={programId ?? ''} onChange={(event) => setProgramId(event.target.value ? Number(event.target.value) : undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-job-program"><option value="">All programs</option>{(programs.data ?? []).map((program) => <option value={program.id} key={program.id}>{program.shortName}</option>)}</select><select value={status ?? ''} onChange={(event) => setStatus(event.target.value || undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-job-status"><option value="">All status</option><option value="open">Open</option><option value="shared">Shared</option><option value="filled">Filled</option><option value="expired">Expired</option></select><div className="flex items-center px-2 text-xs text-muted-foreground">{jobs.length} openings</div></div><div className="overflow-hidden rounded-[14px] border border-border bg-card">{query.isLoading ? <LoadingRows /> : query.isError ? <ErrorState retry={() => query.refetch()} /> : jobs.length === 0 ? <div className="p-16 text-center"><BriefcaseBusiness className="mx-auto h-8 w-8 text-accent" /><h2 className="mt-4 font-serif text-lg font-bold">The job bank is quiet here</h2><p className="mt-1 text-sm text-muted-foreground">Try changing your filters or post an opportunity.</p><button type="button" onClick={() => setDialog(true)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground" data-testid="button-empty-add-job">Post a job</button></div> : <div className="overflow-x-auto"><table className="data-table w-full min-w-[980px] text-left"><thead><tr><th className="px-5 py-3">Opportunity</th><th className="px-4 py-3">Programs</th><th className="px-4 py-3">Schedule / pay</th><th className="px-4 py-3">Posted</th><th className="px-4 py-3">Applicants</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr></thead><tbody>{jobs.map((job) => <tr key={job.id} data-testid={`row-job-${job.id}`}><td className="px-5 py-4"><div className="text-sm font-bold">{job.title}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><span>{job.employerName}</span><span className="mx-1 text-border">/</span><MapPin className="h-3 w-3" />{job.location}</div></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{job.programNames.map((name) => <span key={name} className="rounded bg-muted px-1.5 py-1 text-[10px] font-bold text-muted-foreground">{name}</span>)}</div></td><td className="px-4 py-4"><div className="text-xs font-semibold">{job.schedule}</div><div className="mt-1 text-[11px] text-muted-foreground">{job.pay || 'Pay not listed'}</div></td><td className="px-4 py-4"><div className="flex items-center gap-1 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(job.postedDate))}</div></td><td className="px-4 py-4"><span className="flex items-center gap-1.5 text-xs font-semibold"><UsersRound className="h-3.5 w-3.5 text-muted-foreground" />{job.applicants}</span></td><td className="px-4 py-4"><StatusPill value={job.status} /></td><td className="px-4 py-4"><div className="flex items-center gap-1"><button type="button" onClick={() => setMatching(job)} className="rounded-lg p-2 text-accent-foreground hover:bg-accent/15" data-testid={`button-match-job-${job.id}`} title="Find matches"><Sparkles className="h-3.5 w-3.5" /></button><button type="button" onClick={() => { setEditing(job); setDialog(true); }} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary" data-testid={`button-edit-job-${job.id}`} title="Edit job"><Pencil className="h-3.5 w-3.5" /></button></div></td></tr>)}</tbody></table></div>}</div>{dialog && <JobDialog job={editing} onClose={() => setDialog(false)} />}{matching && <MatchPanel job={matching} onClose={() => setMatching(undefined)} />}</div></AppShell>;
++  return <AppShell><div className="mx-auto max-w-[1500px] px-5 py-7 md:px-9 md:py-9"><PageHeader eyebrow="Opportunity bank" title="Jobs" description="The right role at the right moment. Keep openings useful, current, and easy to connect to a graduate." action={<button type="button" onClick={() => { setEditing(undefined); setDialog(true); }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-new-job"><Plus className="h-4 w-4" />Post a job</button>} /><div className="mb-4 flex flex-col gap-3 rounded-[14px] border border-border bg-card p-3 md:flex-row"><div className="min-w-0 flex-1"><SearchBox value={search} onChange={setSearch} placeholder="Search jobs, employers, or locations" testId="input-search-jobs" /></div><select value={programId ?? ''} onChange={(event) => setProgramId(event.target.value ? Number(event.target.value) : undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-job-program"><option value="">All programs</option>{(programs.data ?? []).map((program) => <option value={program.id} key={program.id}>{program.shortName}</option>)}</select><select value={status ?? ''} onChange={(event) => setStatus(event.target.value || undefined)} className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:border-accent" data-testid="select-filter-job-status"><option value="">All status</option><option value="open">Open</option><option value="shared">Shared</option><option value="filled">Filled</option><option value="expired">Expired</option></select><div className="flex items-center px-2 text-xs text-muted-foreground">{jobs.length} openings</div></div><div className="overflow-hidden rounded-[14px] border border-border bg-card">{query.isLoading ? <LoadingRows /> : query.isError ? <ErrorState retry={() => query.refetch()} /> : jobs.length === 0 ? <div className="p-16 text-center"><BriefcaseBusiness className="mx-auto h-8 w-8 text-accent" /><h2 className="mt-4 font-serif text-lg font-bold">The job bank is quiet here</h2><p className="mt-1 text-sm text-muted-foreground">Try changing your filters or post an opportunity.</p><button type="button" onClick={() => setDialog(true)} className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground" data-testid="button-empty-add-job">Post a job</button></div> : <div className="overflow-x-auto"><table className="data-table w-full min-w-[980px] text-left"><thead><tr><th className="px-5 py-3">Opportunity</th><th className="px-4 py-3">Programs</th><th className="px-4 py-3">Schedule / pay</th><th className="px-4 py-3">Posted</th><th className="px-4 py-3">Applicants</th><th className="px-4 py-3">Status</th><th className="px-4 py-3" /></tr></thead><tbody>{jobs.map((job) => <tr key={job.id} data-testid={`row-job-${job.id}`}><td className="px-5 py-4"><div className="text-sm font-bold">{job.title}</div><div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><span>{job.employerName}</span><span className="mx-1 text-border">/</span><MapPin className="h-3 w-3" />{job.location}</div></td><td className="px-4 py-4"><div className="flex flex-wrap gap-1">{job.programNames.map((name) => <span key={name} className="rounded bg-muted px-1.5 py-1 text-[10px] font-bold text-muted-foreground">{name}</span>)}</div></td><td className="px-4 py-4"><div className="text-xs font-semibold">{job.schedule}</div><div className="mt-1 text-[11px] text-muted-foreground">{job.pay || 'Pay not listed'}</div></td><td className="px-4 py-4"><div className="flex items-center gap-1 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(job.postedDate))}</div></td><td className="px-4 py-4"><span className="flex items-center gap-1.5 text-xs font-semibold"><UsersRound className="h-3.5 w-3.5 text-muted-foreground" />{job.applicants}</span></td><td className="px-4 py-4"><StatusPill value={job.status} /></td><td className="px-4 py-4"><div className="flex items-center gap-1"><button type="button" onClick={() => setMatching(job)} className="rounded-lg p-2 text-accent-foreground hover:bg-accent/15" data-testid={`button-match-job-${job.id}`} title="Find matches"><Sparkles className="h-3.5 w-3.5" /></button><button type="button" onClick={() => { setEditing(job); setDialog(true); }} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-primary" data-testid={`button-edit-job-${job.id}`} title="Edit job"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setDeleting(job)} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" data-testid={`button-delete-job-${job.id}`} title="Delete job"><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>)}</tbody></table></div>}</div>{dialog && <JobDialog job={editing} onClose={() => setDialog(false)} />}{matching && <MatchPanel job={matching} onClose={() => setMatching(undefined)} />}{deleting && <DeleteJobDialog job={deleting} onClose={() => setDeleting(undefined)} />}</div></AppShell>;
+ }
+\ No newline at end of file
+diff --git a/lib/api-client-react/src/generated/api.schemas.ts b/lib/api-client-react/src/generated/api.schemas.ts
+index 508ed29..64afd3b 100644
+--- a/lib/api-client-react/src/generated/api.schemas.ts
++++ b/lib/api-client-react/src/generated/api.schemas.ts
+@@ -255,6 +255,11 @@ export interface DashboardSummary {
+  */
+ export type NotFoundResponse = Error;
+ 
++/**
++ * Record cannot be deleted because other records depend on it
++ */
++export type ConflictResponse = Error;
++
+ export type SearchParameter = string;
+ 
+ export type ProgramIdParameter = number;
+diff --git a/lib/api-client-react/src/generated/api.ts b/lib/api-client-react/src/generated/api.ts
+index bf2bc03..dd9afbb 100644
+--- a/lib/api-client-react/src/generated/api.ts
++++ b/lib/api-client-react/src/generated/api.ts
+@@ -21,6 +21,7 @@ import type {
+ 
+ import type {
+   Activity,
++  ConflictResponse,
+   DashboardSummary,
+   Employer,
+   EmployerInput,
+@@ -679,6 +680,77 @@ export const useUpdateEmployer = <TError = ErrorType<unknown>,
+       return useMutation(getUpdateEmployerMutationOptions(options));
+     }
+ 
++export const getDeleteEmployerUrl = (id: number,) => {
++
++
++
++
++  return `/api/employers/${id}`
++}
++
++/**
++ * @summary Delete an employer
++ */
++export const deleteEmployer = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
++
++  return customFetch<void>(getDeleteEmployerUrl(id),
++  {
++    ...options,
++    method: 'DELETE'
++
++
++  }
++);}
++
++
++
++
++
++export const getDeleteEmployerMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEmployer>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
++): UseMutationOptions<Awaited<ReturnType<typeof deleteEmployer>>, TError,{id: number}, TContext> => {
++
++const mutationKey = ['deleteEmployer'];
++const {mutation: mutationOptions, request: requestOptions} = options ?
++      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
++      options
++      : {...options, mutation: {...options.mutation, mutationKey}}
++      : {mutation: { mutationKey, }, request: undefined};
++
++
++
++
++      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteEmployer>>, {id: number}> = (props) => {
++          const {id} = props ?? {};
++
++          return  deleteEmployer(id,requestOptions)
++        }
++
++
++
++
++
++
++  return  { mutationFn, ...mutationOptions }}
++
++    export type DeleteEmployerMutationResult = NonNullable<Awaited<ReturnType<typeof deleteEmployer>>>
++
++    export type DeleteEmployerMutationError = ErrorType<NotFoundResponse | ConflictResponse>
++
++    /**
++ * @summary Delete an employer
++ */
++export const useDeleteEmployer = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEmployer>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
++ ): UseMutationResult<
++        Awaited<ReturnType<typeof deleteEmployer>>,
++        TError,
++        {id: number},
++        TContext
++      > => {
++      return useMutation(getDeleteEmployerMutationOptions(options));
++    }
++
+ export const getListGraduatesUrl = (params?: ListGraduatesParams,) => {
+   const normalizedParams = new URLSearchParams();
+ 
+@@ -906,6 +978,77 @@ export const useUpdateGraduate = <TError = ErrorType<unknown>,
+       return useMutation(getUpdateGraduateMutationOptions(options));
+     }
+ 
++export const getDeleteGraduateUrl = (id: number,) => {
++
++
++
++
++  return `/api/graduates/${id}`
++}
++
++/**
++ * @summary Delete a graduate
++ */
++export const deleteGraduate = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
++
++  return customFetch<void>(getDeleteGraduateUrl(id),
++  {
++    ...options,
++    method: 'DELETE'
++
++
++  }
++);}
++
++
++
++
++
++export const getDeleteGraduateMutationOptions = <TError = ErrorType<NotFoundResponse>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGraduate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
++): UseMutationOptions<Awaited<ReturnType<typeof deleteGraduate>>, TError,{id: number}, TContext> => {
++
++const mutationKey = ['deleteGraduate'];
++const {mutation: mutationOptions, request: requestOptions} = options ?
++      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
++      options
++      : {...options, mutation: {...options.mutation, mutationKey}}
++      : {mutation: { mutationKey, }, request: undefined};
++
++
++
++
++      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGraduate>>, {id: number}> = (props) => {
++          const {id} = props ?? {};
++
++          return  deleteGraduate(id,requestOptions)
++        }
++
++
++
++
++
++
++  return  { mutationFn, ...mutationOptions }}
++
++    export type DeleteGraduateMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGraduate>>>
++
++    export type DeleteGraduateMutationError = ErrorType<NotFoundResponse>
++
++    /**
++ * @summary Delete a graduate
++ */
++export const useDeleteGraduate = <TError = ErrorType<NotFoundResponse>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGraduate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
++ ): UseMutationResult<
++        Awaited<ReturnType<typeof deleteGraduate>>,
++        TError,
++        {id: number},
++        TContext
++      > => {
++      return useMutation(getDeleteGraduateMutationOptions(options));
++    }
++
+ export const getListJobsUrl = (params?: ListJobsParams,) => {
+   const normalizedParams = new URLSearchParams();
+ 
+@@ -1133,6 +1276,77 @@ export const useUpdateJob = <TError = ErrorType<unknown>,
+       return useMutation(getUpdateJobMutationOptions(options));
+     }
+ 
++export const getDeleteJobUrl = (id: number,) => {
++
++
++
++
++  return `/api/jobs/${id}`
++}
++
++/**
++ * @summary Delete a job opportunity
++ */
++export const deleteJob = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
++
++  return customFetch<void>(getDeleteJobUrl(id),
++  {
++    ...options,
++    method: 'DELETE'
++
++
++  }
++);}
++
++
++
++
++
++export const getDeleteJobMutationOptions = <TError = ErrorType<NotFoundResponse>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteJob>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
++): UseMutationOptions<Awaited<ReturnType<typeof deleteJob>>, TError,{id: number}, TContext> => {
++
++const mutationKey = ['deleteJob'];
++const {mutation: mutationOptions, request: requestOptions} = options ?
++      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
++      options
++      : {...options, mutation: {...options.mutation, mutationKey}}
++      : {mutation: { mutationKey, }, request: undefined};
++
++
++
++
++      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteJob>>, {id: number}> = (props) => {
++          const {id} = props ?? {};
++
++          return  deleteJob(id,requestOptions)
++        }
++
++
++
++
++
++
++  return  { mutationFn, ...mutationOptions }}
++
++    export type DeleteJobMutationResult = NonNullable<Awaited<ReturnType<typeof deleteJob>>>
++
++    export type DeleteJobMutationError = ErrorType<NotFoundResponse>
++
++    /**
++ * @summary Delete a job opportunity
++ */
++export const useDeleteJob = <TError = ErrorType<NotFoundResponse>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteJob>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
++ ): UseMutationResult<
++        Awaited<ReturnType<typeof deleteJob>>,
++        TError,
++        {id: number},
++        TContext
++      > => {
++      return useMutation(getDeleteJobMutationOptions(options));
++    }
++
+ export const getGetJobMatchesUrl = (id: number,) => {
+ 
+ 
+diff --git a/lib/api-spec/openapi.yaml b/lib/api-spec/openapi.yaml
+index ec7b188..4860682 100644
+--- a/lib/api-spec/openapi.yaml
++++ b/lib/api-spec/openapi.yaml
+@@ -143,6 +143,19 @@ paths:
+             application/json:
+               schema:
+                 $ref: "#/components/schemas/Employer"
++    delete:
++      operationId: deleteEmployer
++      tags: [employers]
++      summary: Delete an employer
++      parameters:
++        - $ref: "#/components/parameters/Id"
++      responses:
++        "204":
++          description: Employer deleted
++        "404":
++          $ref: "#/components/responses/NotFound"
++        "409":
++          $ref: "#/components/responses/Conflict"
+   /graduates:
+     get:
+       operationId: listGraduates
+@@ -202,6 +215,17 @@ paths:
+             application/json:
+               schema:
+                 $ref: "#/components/schemas/Graduate"
++    delete:
++      operationId: deleteGraduate
++      tags: [graduates]
++      summary: Delete a graduate
++      parameters:
++        - $ref: "#/components/parameters/Id"
++      responses:
++        "204":
++          description: Graduate deleted
++        "404":
++          $ref: "#/components/responses/NotFound"
+   /jobs:
+     get:
+       operationId: listJobs
+@@ -261,6 +285,17 @@ paths:
+             application/json:
+               schema:
+                 $ref: "#/components/schemas/Job"
++    delete:
++      operationId: deleteJob
++      tags: [jobs]
++      summary: Delete a job opportunity
++      parameters:
++        - $ref: "#/components/parameters/Id"
++      responses:
++        "204":
++          description: Job deleted
++        "404":
++          $ref: "#/components/responses/NotFound"
+   /jobs/{id}/matches:
+     get:
+       operationId: getJobMatches
+@@ -302,6 +337,12 @@ components:
+         application/json:
+           schema:
+             $ref: "#/components/schemas/Error"
++    Conflict:
++      description: Record cannot be deleted because other records depend on it
++      content:
++        application/json:
++          schema:
++            $ref: "#/components/schemas/Error"
+   schemas:
+     HealthStatus:
+       type: object
+diff --git a/lib/api-zod/src/generated/api.ts b/lib/api-zod/src/generated/api.ts
+index 361053d..9d44946 100644
+--- a/lib/api-zod/src/generated/api.ts
++++ b/lib/api-zod/src/generated/api.ts
+@@ -214,6 +214,16 @@ export const UpdateEmployerResponse = zod.object({
+ })
+ 
+ 
++/**
++ * @summary Delete an employer
++ */
++export const DeleteEmployerParams = zod.object({
++  "id": zod.coerce.number().int()
++})
++
++export const DeleteEmployerResponse = zod.void()
++
++
+ /**
+  * @summary List graduates
+  */
+@@ -320,6 +330,16 @@ export const UpdateGraduateResponse = zod.object({
+ })
+ 
+ 
++/**
++ * @summary Delete a graduate
++ */
++export const DeleteGraduateParams = zod.object({
++  "id": zod.coerce.number().int()
++})
++
++export const DeleteGraduateResponse = zod.void()
++
++
+ /**
+  * @summary List job opportunities
+  */
+@@ -424,6 +444,16 @@ export const UpdateJobResponse = zod.object({
+ })
+ 
+ 
++/**
++ * @summary Delete a job opportunity
++ */
++export const DeleteJobParams = zod.object({
++  "id": zod.coerce.number().int()
++})
++
++export const DeleteJobResponse = zod.void()
++
++
+ /**
+  * @summary Find opted-in graduates who match a job
+  */
+diff --git a/lib/api-zod/src/generated/types/conflictResponse.ts b/lib/api-zod/src/generated/types/conflictResponse.ts
+new file mode 100644
+index 0000000..c3d5293
+--- /dev/null
++++ b/lib/api-zod/src/generated/types/conflictResponse.ts
+@@ -0,0 +1,13 @@
++/**
++ * Generated by orval v8.23.0 🍺
++ * Do not edit manually.
++ * Api
++ * API specification
++ * OpenAPI spec version: 0.1.0
++ */
++import type { Error } from './error';
++
++/**
++ * Record cannot be deleted because other records depend on it
++ */
++export type ConflictResponse = Error;
+diff --git a/lib/api-zod/src/generated/types/index.ts b/lib/api-zod/src/generated/types/index.ts
+index 5d72f5c..a8c184d 100644
+--- a/lib/api-zod/src/generated/types/index.ts
++++ b/lib/api-zod/src/generated/types/index.ts
+@@ -8,6 +8,7 @@
+ 
+ export * from './activity';
+ export * from './activityType';
++export * from './conflictResponse';
+ export * from './dashboardSummary';
+ export * from './employer';
+ export * from './employerInput';

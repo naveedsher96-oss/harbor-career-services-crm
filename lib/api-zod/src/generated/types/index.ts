@@ -8,6 +8,7 @@
 
 export * from './activity';
 export * from './activityType';
+export * from './conflictResponse';
 export * from './dashboardSummary';
 export * from './employer';
 export * from './employerInput';

@@ -255,6 +255,11 @@ export interface DashboardSummary {
  */
 export type NotFoundResponse = Error;
 
+/**
+ * Record cannot be deleted because other records depend on it
+ */
+export type ConflictResponse = Error;
+
 export type SearchParameter = string;
 
 export type ProgramIdParameter = number;

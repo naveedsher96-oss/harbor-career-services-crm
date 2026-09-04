@@ -21,6 +21,7 @@ import type {
 
 import type {
   Activity,
+  ConflictResponse,
   DashboardSummary,
   Employer,
   EmployerInput,
@@ -679,6 +680,77 @@ export const useUpdateEmployer = <TError = ErrorType<unknown>,
       return useMutation(getUpdateEmployerMutationOptions(options));
     }
 
+export const getDeleteEmployerUrl = (id: number,) => {
+
+
+
+
+  return `/api/employers/${id}`
+}
+
+/**
+ * @summary Delete an employer
+ */
+export const deleteEmployer = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteEmployerUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteEmployerMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEmployer>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteEmployer>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteEmployer'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteEmployer>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteEmployer(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteEmployerMutationResult = NonNullable<Awaited<ReturnType<typeof deleteEmployer>>>
+
+    export type DeleteEmployerMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Delete an employer
+ */
+export const useDeleteEmployer = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEmployer>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteEmployer>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteEmployerMutationOptions(options));
+    }
+
 export const getListGraduatesUrl = (params?: ListGraduatesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -906,6 +978,77 @@ export const useUpdateGraduate = <TError = ErrorType<unknown>,
       return useMutation(getUpdateGraduateMutationOptions(options));
     }
 
+export const getDeleteGraduateUrl = (id: number,) => {
+
+
+
+
+  return `/api/graduates/${id}`
+}
+
+/**
+ * @summary Delete a graduate
+ */
+export const deleteGraduate = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteGraduateUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteGraduateMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGraduate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteGraduate>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteGraduate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGraduate>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteGraduate(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteGraduateMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGraduate>>>
+
+    export type DeleteGraduateMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Delete a graduate
+ */
+export const useDeleteGraduate = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteGraduate>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteGraduate>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteGraduateMutationOptions(options));
+    }
+
 export const getListJobsUrl = (params?: ListJobsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -1131,6 +1274,77 @@ export const useUpdateJob = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateJobMutationOptions(options));
+    }
+
+export const getDeleteJobUrl = (id: number,) => {
+
+
+
+
+  return `/api/jobs/${id}`
+}
+
+/**
+ * @summary Delete a job opportunity
+ */
+export const deleteJob = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteJobUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteJobMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteJob>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteJob>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteJob'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteJob>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteJob(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteJobMutationResult = NonNullable<Awaited<ReturnType<typeof deleteJob>>>
+
+    export type DeleteJobMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Delete a job opportunity
+ */
+export const useDeleteJob = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteJob>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteJob>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteJobMutationOptions(options));
     }
 
 export const getGetJobMatchesUrl = (id: number,) => {
